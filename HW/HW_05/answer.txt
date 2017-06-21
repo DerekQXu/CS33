@@ -1,0 +1,13 @@
+12.18
+A. Unsafe, L1 causes the thread to enter an unsafe region
+B. Safe, Threads 1 and 2 never enter unsafe regions
+C. Unsafe, L2 causes the thread to enter an unsafe region
+
+12.24
+RIO is re-entrant, because it is thread safe and uses no additional synchronization
+techniques such as semaphores, locks, monitors, or tid functions. Sepcifically,
+RIO is implicitly re-entrant because it relies on the user to safely pass parameters;
+it is not explicitly re-entrant (as it does not take in only non-pointer variables, 
+so that everything is stored on the thread's seperate stack.) Also, note that just
+because a function is thread safe does not mean it is re entrant. Re entrant functions
+are a subset of thread safe functions.

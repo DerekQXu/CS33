@@ -1,0 +1,10 @@
+A.
+sizeof() returns a number of type size_t, which is unsigned. When an unsigned variable and
+a signed variable are added together, the result is always an unsigned variable. Because
+unsigned variables must be >= 0, the result of maxbytes-sizeof(val) >= 0 always returns true.
+B.
+The if conditional can be rewritten as:
+	if(maxbytes - (int) sizeOf(val) >= 0)
+	{
+		//unaltered code here
+	}

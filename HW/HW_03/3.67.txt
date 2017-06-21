@@ -1,0 +1,75 @@
+3.67
+A.
+stack prior to calling process
+HIGH ADDRESS
++------------+
+|     ?      | %rsp + 104
++------------+
+|            |
+|    ...     |
++------------+
+|     ?      | %rsp + 64, %rdi
++------------+
+|            |
+|    ...     |
++------------+
+|     z      | %rsp + 24, %rax
++------------+
+|    &z      | %rsp + 16
++------------+
+|     y      | %rsp + 8
++------------+
+|     x      | %rsp
++------------+
+LOW ADDRESS
+
+B.
+eval passes %rsp+64 (or %rdi) in its call to process. %rsp+64 is actually
+the address of the value strB when it is used by process.
+
+C.
+eval moves function parameters, x, y, and z into the stack to form the member
+variable, str A, as shown above. call process causes the return address to 
+be pushed onto the stack which subtracts 8 from %rsp and increments all of 
+the variables stored by eval by 8. In other words, strA can be found in the
+following locations: 
+a[0] is in %rsp+8; a[1] in %rsp+16; and p in %rsp+24.
+
+D.
+Process sets the field by storing the variable strB starting at %rdi. In 
+other words, str B can be found with the following locations:
+y is in %rdi (or %rsp+72), x in %rdi+8 (or %rsp+80), z in %rdi+16 (or %rsp+88). 
+
+E.
+stack following the return from the function
+HIGH ADDRESS
++------------+
+|     ?      | %rsp + 104
++------------+
+|            |
+|    ...     |
++------------+
+|     z      | %rsp + 80, %rdi
++------------+
+|     x      | %rsp + 72, %rdi
++------------+
+|     y      | %rsp + 64, %rdi
++------------+
+|            |
+|    ...     |
++------------+
+|     z      | %rsp + 24, %rax
++------------+
+|    &z      | %rsp + 16
++------------+
+|     y      | %rsp + 8
++------------+
+|     x      | %rsp
++------------+
+LOW ADDRESS
+
+F.
+Structures are stored in the stack by having elements of the stack stored 
+adjacent to eachother. When they are returned, the address of the first element
+of the structure is returned. When they are passed as arguments, the address
+of the first element of the structure is passed.

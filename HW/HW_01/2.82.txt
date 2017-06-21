@@ -1,0 +1,56 @@
+a) (x<y) == (-x>-y)
+	returns 0 when x = INT_MIN and y = -1	
+		In 2s Complement, -x would cause an overflow, invalidating the statement
+
+b) ((x+y)<<4) + y - x == 17*y + 15*x
+	returns 1
+		<< 4 is equivalent to multiplying by 16
+		Because x and y are signed integers, they wrap around, 
+		and the following is true:
+			(x+y) << 4 == (x +y) *16
+			(x+y)* 16 == 16*x + 16*y
+			16*x + 16*y + y - x == 17*y + 15*x
+		Thus the two statements perform the same operations 
+
+c) ~x+~y+1 = ~(x+y)
+	returns 1
+		~x is equivalent to -(x+1)
+		Because x and y are signed integers, they wrap around, 
+		and the following is true:
+			~x + ~y + 1 = ~(x + y)
+			-(x+1) + -(y+1) + 1 = -((x+y) + 1)
+			-x + -y + -1 = -(x + y) + -1
+			-x + -y + -1 == -x + -y + -1
+		Thus the two statements perform the same operations 
+
+d) (ux-uy) == -(unsigned)(y-x)
+	returns 1
+		unsigned and 2s complement integers are the same bitwise when
+		addition is applied on them
+			i.e. Typecasting also doesn't alter the physical bits
+		the final comparison is between 2 unsigned 32bit integers	
+			ux - uy = -(uy - ux)	
+			ux - uy = -uy + ux
+			ux - uy = ux - uy
+		Thus the two statements perform the same operations 
+
+e) ((x>>2)<<2)<=x
+	returns 1
+		>>2<<2 basically turns the last 2 bits into 0
+		in 2s complement, turning bits from 1 to 0 make both positive AND
+		negative numbers more negative.
+
+f) x >> 1 = (ux >> 1) + (ux & -1 << 31))
+	returns 1
+		>> shift on ux is logical
+		first, evaluate (ux & -1 << 31)
+		<< has higher precedence
+		ux & -1 << 31 == ux & 0x80000000;
+		ux & 0x80000000 is the first bit of ux appended with 0s
+		In this sense, ux only adds 0x80000000 when the integer x is negative
+
+g) x % 128 == (x & 127)
+	returns 0 when x = -127
+		128 == 00..0010000000
+		127 == 00..0001111111
+		Statement works for unsigned but breaks down for 2s complement

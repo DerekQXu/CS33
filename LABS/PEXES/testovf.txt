@@ -1,0 +1,60 @@
+(1) -O2
+Assembly Language file:
+xorl    %eax, %eax
+ret
+
+Differences:
+This is a standard compilation with -O2 optimization. The
+compiler optimizes the C-code by always returning zero, as
+it assumes number A plus number B MUST be bigger than either
+of the two beginning numbers.
+
+(2) -O2 -fwrapv
+Assembly Language file:
+movabsq $9223372036854775807, %rax
+addq    %rdi, %rax
+cmpq    %rax, %rdi
+setg    %al
+ret
+
+Differences:
+-fwrapv allows integers to always wrap around when they
+overflow instead of undefined behavior. There will be no
+warnings, like -fsanitize=undefined. Logically, the
+assembly code is intuitive and follows the C code.
+
+(3) -O2 -fsanitize=undefined
+Assembly Language file:
+.LFB0:
+        pushq   %rbp
+        pushq   %rbx
+        movabsq $9223372036854775807, %rdx
+        movq    %rdi, %rbp
+        movq    %rdi, %rbx
+        subq    $8, %rsp
+        addq    %rdx, %rbp
+        jo      .L6
+.L2:
+        cmpq    %rbp, %rbx
+        setg    %al
+        addq    $8, %rsp
+        popq    %rbx
+        popq    %rbp
+        ret
+.L6:
+        movq    %rdi, %rsi
+        movl    $.Lubsan_data0, %edi
+        call    __ubsan_handle_add_overflow
+        jmp     .L2
+
+Differences:
+As seen in the assembly code, -fsanitize=undefined operates
+similarly to -fwrapv except it includes an if statment that
+calls a block of code IF the number overflows. That block
+of code being called is .L6, which includes another call to
+ubsan_handel_add_overflow. ubsan_handel_add_overflow creates
+a warning message to be displayed describing the overflow.
+Both conditions (if it does overflow or it doesn't overflow)
+makes the code eventually jump or fall into .L2. From .L2 the
+assembly is very much the same as -fwrapv, thus we can conclude
+that -fsanitize is like -fwrapv but throws compiler warnings.

@@ -1,0 +1,76 @@
+Code:
+/* Create some arbitrary values */
+int x = random();
+int y = random();
+int z = random();
+/* convert to double */
+double	dx = (double) x;
+double	dy = (double) y;
+double	dz = (double) z;
+
+answers:
+A. (float) x == (float) dx
+True.
+dx is the same as x, because integer conversion into double has no rounding error,
+and the resulting double takes on the same numerical value as the integer (though
+different bit vector). When the double, dx, and the integer, x, is then converted
+to a float, they are rounded to the closest numerical 32-bit floating pt number.
+Because x and dx are numerically the same, their rounded float values should be
+numerically the same as well.
+
+B. dx-dy == (double) (x-y)
+False.
+x and y have smaller ranges than dx and dy, because 32-bit integers have smaller
+ranges than 64-bit doubles. Their ranges are roughly: [-2.14*10^9, 2.14*10^9], and
+[-1.7E+308, 1.7E+308], respectively. This implies that the integer arithmetic can
+overflow when double arithmetic wouldn't. One could take the example where x = 2^31-1
+and y = -2. The value (x-y) would overflow and wrap around (if -fwrapv is enabled),
+whereas the value (dx-dy) would produce the correct numerical output.
+
+C. (dx + dy) + dz = dx + (dy + dz)
+True.
+x and y have smaller ranges than dx and dy, because 32-bit integers have smaller
+ranges than 64-bit doubles. Their ranges are roughly: [-2.14*10^9, 2.14*10^9], and
+[-1.7E+308, 1.7E+308], respectively. This implies that dx/dy/dz can not overflow since
+they were casted from int's. Furthermore, since all operands are already doubles,
+there would be no rounding error. Mathematically, addition is associative thus both
+expressions should give the same numerical output.
+
+D. (dx * dy) * dz = dx * (dy * dz)
+False.
+Doubles are precise at representing every 32bit integer because it has more than 32
+bits in its mantissa; however, this breaks down when you begin to multiply 32 bit
+numbers onto themselves. In this case, rounding error may accumulate as you multiply
+2 32-bit numbers onto eachother when otherwise no error would occur. This is because
+the resulting product of 2 integers can be more than the maximum a 51bit mantissa
+can represent... Following this logic, it can be said that there exists a number such
+that 2 numbers multiplied together gives a result that makes the mantissa rounded up,
+and another number that when multiplied together with one of the previous 2 numbers
+gives the result of the mantissa rounded down. Mathematically, as long as a number
+with the following characteristics exist the result is false:
+2^(52+m) + 2^m = x*y
+2^(51+n) = y*z
+m,n = [0,oo)
+x,y,z = [0,2^31-1]
+In such a large range such a pair of numbers is certain to exist, proving that the
+expression above is false. This is further strengthened by the fact that 2^(52+m)
+is usually not a prime number, and that the integer range available to dx/dy/dz
+covers a large range of m's and n's.
+Note: -fwrapv is not used here b/c the largest possible value from dx/dy/dz is
+(-2^31)^3 = -9.9E+27, but double's have range up to 1.7E+308.
+
+E. dx/dx = dz/dz
+False.
+when a double is divided by itself it could either do the numerically correct
+expression and output 1, or it could run into trouble. An example of trouble is if
+the double dx = 0 and dz = 5. In this case, dx/dx would cause the result NaN and
+dz/dz would return the correct numerical result. Any comparison with the value
+NaN triggers a flag to return false. This counter example is valid if we simply
+assume that the random() generated 0 for either dx or dz.
+
+On fwrapv:
+only question B relies on -fwrapv as the other arithmetic operations on dx/dy/dz
+or x/y/z are too small to make the number overflow. In question B, -fwrapv defines
+the undefined behavior set by the C Standard (Per Paragraph 5/4) regarding signed
+integer overflow. This allows us to say for certain that B may sometimes return
+false.

@@ -1,0 +1,16 @@
+3.70
+A.
+offsets:
+e1.p:       0 bytes
+e1.y:       8 bytes
+e2.x:       0 bytes
+e2.next:    8 bytes
+
+B.
+The structure requires 16 bytes total.
+
+C.
+missing expressions filled in proc:
+void proc (union ele *up){
+    up->(e2.x) = *(up->(e2.next)->(e1.p)) - up->(e2.next)->(e1.y);
+}

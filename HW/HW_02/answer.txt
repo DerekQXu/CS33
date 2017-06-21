@@ -1,0 +1,32 @@
+A.
+x is held in register %rdi. However, x is also copied into and TEMPORARILY stored in 
+register %r8 (r8 later is altered to hold the bit vector equivalent to 'x&mask').
+n is held in %esi. However, n is also copied into register %ecx.
+result is held in %rax.
+mask is held in %rdx.
+
+B.
+result's initial value is 0 (line 4 of assembly code)
+mask's intial value is 1 (line 3 of assembly code)
+
+C.
+The test condition is: mask != 0
+
+D.
+Mask's update: mask = mask << (n & 0xFF);
+
+E.
+Result's update: result |= x&mask;
+
+F.
+As taken from loop.c . . .
+long loop(long x, long n)
+{
+    long result = 0;
+    long mask;
+    for (mask = 1; mask != 0; mask = mask << (n&0xFF)){
+        result |= (x&mask);
+    }
+    return result;
+}
+

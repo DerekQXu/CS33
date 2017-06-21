@@ -1,0 +1,77 @@
+What worked:
+$ gdb ~eggert/bin64/bin/emacs-25.2
+    Opens thee executable 'eggert/bin64/bin/emacs-25.2' in gdb
+    Allows the gdb debugger to collect information on the trace
+
+(gdb) b Ftimes
+    Sets a breakpoint at the function Ftimes
+    The program will stop when Ftimes is called and allow the user
+    to step through the program manually with si
+
+(gdb) set disassemble-next-line on
+    Displays assembly code for the recent couple instructions being
+    executed: includes the machine address of the instruction in
+    hexadecimal, the bytes of the machine instruction, and the
+    assembly language equivalent.
+
+(gdb) r -Q -batch -eval '(print (* 1250284240 -1844255039))'
+    Runs the command, emacs -Q -batch -eval '(print (* 1250284240 -1844255039))',
+    in the gdb debugger
+    Stops at the breakpoint set at Ftimes earlier
+
+(gdb) disas   //THIS COMMAND IS OPTIONAL
+    Used to double check that the program paused at the right place
+    NOTE: at this point, you can start collecting information from the assembly
+    code shown by 'set disassemble-next-line on' for the trace
+
+Repeat the following until the function finished running:
+(gdb) si
+    Steps onto the next instruction.
+    Allows the user to collect information displayed by 'set disassemble-next-line
+    on' for the trace
+
+(gdb) info registers
+    Displays the values in most registers prior to the instruction pointed
+    to by the '=>' executes
+    Allows the user to collect information on the instruction's effect on
+    general registers for the trace
+
+(gdb) x <MEMORY ADDRESS>
+    Allows the user to collect information on the instruction's effect on
+    memory for the trace
+    Manually calculate the memory address of value being looked at
+    Documentation: http://www.delorie.com/gnu/docs/gdb/gdb_56.html
+
+The code finishes running when it hits retq statement in arith_driver
+    I found this out by viewing the source code in ~eggert/src/emacs-25.2/src/data.c
+
+What didn't worked:
+$ gdb ~eggert/bin64/bin/emacs-25.2
+(gdb) b Ftimes
+(gdb) r
+    this runs emacs instead of the multiplying number command.
+    i fixed this with r -Q -batch -eval '(print (* 1250284240 -1844255039))'
+
+$ gdb ~eggert/bin64/bin/emacs-25.2
+(gdb) b Ftimes
+(gdb) r -Q -batch -eval '(print (* 1250284240 -1844255039))'
+(gdb) si
+(gdb) info registers
+(gdb) disas
+    disas does not give me the bytes of the machine instrucion
+    I fixed this with set disassemble-next-line on
+
+$ gdb ~eggert/bin64/bin/emacs-25.2
+(gdb) b Ftimes
+(gdb) set disassemble-next-line on
+(gdb) r -Q -batch -eval '(print (* 1250284240 -1844255039))'
+(gdb) disas
+(gdb) n
+(gdb) info registers
+    n, next, sometimes skips instructions
+    I fixed this with si, step into
+
+...
+(gdb) b FTimes
+    gdb is case-sensitive; this will not work
+    I fixed this with b Ftimes
