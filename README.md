@@ -5,6 +5,9 @@ learned in the class. Copying is strictly prohibited and will be at your own exp
 
 ## Grades
 Homeworks:
+
 HW1 - 100, HW2 - 100, HW3 - 100, HW4 - 100, HW5 - 100
+
 Labs:
+
 Data - 100, Pexes - 95, Smashing - 100, OpenMP - 110
